@@ -3,6 +3,7 @@ numpy
 scipy
 ray
 diskcache
-FiPy
+FiPy==4.0.3
 wavedata
 sellmeier
+
