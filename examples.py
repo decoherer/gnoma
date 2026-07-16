@@ -17,6 +17,7 @@ def corningpmfiberexample(λ=1064,fiber=980,step=0.2,plot=False):
     print(f'{md.mfdy:g}µm mode field diameter height')
     print(f'{md.modearea():g} µm² mode area')
     print(f'{md.modecount()} modes, {md.guidedmodecount()} guided modes')
+    print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
     if plot:
         s = f'corning pm fiber waveguide mode{md.modenum} at {λ}nm'
         md.plot(x='width (µm)',y='depth (µm)',save=f'mode profile, {s}')
@@ -44,7 +45,7 @@ def ktpwaveguideexample(λ=1064,width=4,depth=5,conc=1,anneal=1,reverseexchange=
     print(f'{md.modecount()} modes, {md.guidedmodecount()} guided modes')
     # print(f'{md.modeid()} mode id')
     # print(md.fiberoverlap(fiber=980))
-    # print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
+    print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
     if plot:
         s = f'ktp waveguide {md.pol.upper()} mode{md.modenum} at {λ}nm'
         md.plot(x='width (µm)',y='depth (µm)',save=f'mode profile, {s}')
@@ -62,6 +63,7 @@ def ridgewaveguideexample(λ=1550,width=10,depth=10,etchdepth=5,step=0.2,plot=Fa
     print(f'{md.mfdy:g}µm mode field diameter height')
     print(f'{md.modearea():g} µm² mode area')
     print(f'{md.modecount()} modes, {md.guidedmodecount()} guided modes')
+    print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
     if plot:
         s = f'mgln ridge waveguide mode{md.modenum} at {λ}nm'
         md.plot(x='width (µm)',y='depth (µm)',save=f'mode profile, {s}')
@@ -88,6 +90,7 @@ def rpewaveguideexample(λ=1550,width=8,sadepth=1.9,annealtime=23.5,reversetime=
     print(f'{md.modecount()} modes, {md.guidedmodecount()} guided modes')
     # print(f'{md.apeprotondose():g} ape proton dose')
     # print(f'{md.protondose():g} proton dose')
+    print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
     if plot:
         s = f'ln rpe waveguide mode{md.modenum} at {λ}nm'
         md.plot(x='width (µm)',y='depth (µm)',save=f'mode profile, {s}')
@@ -105,6 +108,7 @@ def rpedirectionalcoupler(λ=1550,split=12,width=8,sadepth=1.9,annealtime=23.5,r
     print(f'{md[0].neff.real:g} symmetric mode effective index')
     print(f'{md[1].neff.real:g} antisymmetric mode effective index')
     print(f'{md.couplinglength():g}mm coupling length')
+    print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
     if plot:
         Ls = wrange(0,30,0.1)
         Wave(md.crossover(Ls),Ls).plot(x='coupling length (mm)',y='crossover transmission',grid=1,xlim='f',save=f'ln rpe directional coupler crossover vs coupling length')

@@ -331,7 +331,7 @@ class Modedata():
         def f(x):
             x0,y0 = x
             fd = fibermode(self.λ,x0=x0,y0=y0,res=(self.ee.dx,self.ee.dy),limits=self.ee.bounds(),fiber=fiber,θx=θx,θy=θy)
-            return 1/self.overlap(fd)
+            return 1/(1e-9+self.overlap(fd))
         if p0 is not None:
             return 1/f(p0)
         x0,y0 = self.ee.xymax()
@@ -355,7 +355,7 @@ class Modedata():
         x,y = x if x is not None else bd.x, y if y is not None else bd.y 
         return fibermode(self.λ,x0=x,y0=y,res=self.args.step,limits=self.args.limits)
     def gaussianoverlap(self,ωx,ωy=None,x0=0,y0=0,res=None,limits=None):
-        res = res if res is not None else self.ee.dx
+        res = res if res is not None else (self.ee.dx,self.ee.dy)
         limits = limits if limits is not None else self.ee.bounds()
         md = gaussmode(None,ωx,ωy,x0,y0,res,limits)
         return self.ee.overlap(md.ee)
@@ -392,7 +392,7 @@ class Modedata():
     def overlaparea(self,md,md2):
         return self.ee.overlaparea(md.ee,md2.ee) if self.ee is not None else np.nan
     def modeidstr(self):
-        ax,ay = self.modeid()
+        ax,ay = self.modeid(asstring=0)
         return str(ax)+str(ay) if 0<=ax<10 and 0<=ay<10 else '?' #str(ax)+','+str(ay)
     # def modeids(self,asstring=False):
     #     # return [self.identifymode(k) for k in range(self.modecount())]
@@ -1025,8 +1025,9 @@ class Qpmdata:
 def octavesolver(λ,epsx,epsy,epsz,nummodes,dx,dy,boundary,method='exact',nguess=None,verbose=False):
     # https://www.photonics.umd.edu/software/wgmodes/ # A. B. Fallahkhair, K. S. Li and T. E. Murphy, "Vector Finite Difference Modesolver for Anisotropic Dielectric Waveguides", J. Lightwave Technol. 26(11), 1423-1431, (2008).
     # boundary: 4 letter string specifying boundary conditions to be applied at the edges of the computation window. [North,South,East,West] 'A' - Hx is antisymmetric, Hy is symmetric. 'S' - Hx is symmetric and, Hy is antisymmetric. '0' - Hx and Hy are zero immediately outside of the boundary.
-    import os,oct2py
+    import os
     os.environ["OCTAVE_EXECUTABLE"] = r"C:\octave\Octave-4.4.1\bin\octave-cli.exe"
+    import oct2py
     oct2py.octave.addpath('oct')
     assert method in ('exact','isotropic','supress')
     if 'isotropic'==method:
@@ -1440,13 +1441,15 @@ class Waveguide():
         args = dict(Type=Type,dmask=dmask,method=method,modes=modes,nummodes=nummodes,boundary=boundary,**kwargs)
         def func(λ):
             return 1/self.qpm(λ1=λ,λ2=λ2 if λ2 is not None else λ,**args).Λ - 1/Λ
-        return finvert(func,x0=λ1-Δλ,x1=λ1+Δλ,xtol=λtol,verbose=verbose)
+        λ = finvert(func,x0=λ1-Δλ,x1=λ1+Δλ,xtol=λtol,verbose=verbose)
+        return self.qpm(λ1=λ,λ2=λ2 if λ2 is not None else λ,**args)
     def λ2qpm(self,Λ,λ1,λ2,Δλ=100,λtol=1,verbose=False,Type='vvv',dmask=None,method=None,modes=(0,0,0),nummodes=(None,None,None),boundary='0000',**kwargs):
         from wavedata import finvert
         args = dict(λ1=λ1,Type=Type,dmask=dmask,method=method,modes=modes,nummodes=nummodes,boundary=boundary,**kwargs)
         def func(λ):
             return 1/self.qpm(λ2=λ,**args).Λ - 1/Λ
-        return finvert(func,x0=λ2-Δλ,x1=λ2+Δλ,xtol=λtol,verbose=verbose)
+        λ = finvert(func,x0=λ2-Δλ,x1=λ2+Δλ,xtol=λtol,verbose=verbose)
+        return self.qpm(λ2=λ,**args)
     def λshgqpm(self,Λ,λ1,λ2=None,Δλ=100,λtol=1,verbose=False,Type='vvv',dmask=None,method=None,modes=(0,0,0),nummodes=(None,None,None),boundary='0000',**kwargs):
         assert λ1==λ2 or λ2 is None
         return self.λ1qpm(Λ,λ1,λ2=None,Δλ=Δλ,λtol=λtol,verbose=verbose,Type=Type,dmask=dmask,method=method,modes=modes,nummodes=nummodes,boundary=boundary,**kwargs)
@@ -2353,18 +2356,18 @@ def fibermode(λ,a=None,l=0,x0=0,y0=0,res=0.1,limits=None,fiber=None,θx=0,θy=0
     if θx or θy:
         ee = ee * exp(1j*2000*pi*θx*xx/λ) * exp(1j*2000*pi*θy*yy/λ)
     # md = Modedata(λ,'sio2',[neff],nn,n,dn,[ee],0,args) # md.ex.plot()
-    md = Modedata(λ,[neff],nn,nn,nn,[ee],[0*ee],[0*ee],[0*ee],[0*ee],[0*ee]) # md.ex.plot()
+    md = Modedata(λ,[neff],nn,nn,nn,[ee],[0*ee],[0*ee],[0*ee],[0*ee],[0*ee],modenum=0,pol='h') # md.ex.plot()
     # λ,neffs,nx,ny,nz,Exs,Eys,Ezs,Hxs,Hys,Hzs
     return md
-def gaussmode(λ=None,ωx=None,ωy=None,x0=0,y0=0,res=0.1,limits=None):
+def gaussmode(λ=None,ωx=None,ωy=None,x0=0,y0=0,res=0.1,limits=None,pol='v'):
     ωy = ωy if ωy is not None else ωx
-    xmin,xmax,ymin,ymax = limits = limits if limits is not None else [x0-4*ωx,x0+4*ωx,y0-4*ωx,y0+4*ωx] # exp(-4**2) = 1e-7
+    xmin,xmax,ymin,ymax = limits = limits if limits is not None else [x0-4*ωx,x0+4*ωx,y0-4*ωx,y0+4*ωx]
     args = locals()
     resx,resy = res if hasattr(res,'__len__') else [res,res]
-    # xx,yy = Wave2D(xs=np.arange(xmin,xmax+res/2,res),ys=np.arange(ymin,ymax+res/2,res),returngrid=1)
     xx,yy = Wave2D(xs=np.arange(xmin,xmax+resx/2,resx),ys=np.arange(ymin,ymax+resy/2,resy)).grid()
     ee = np.exp( -((xx-x0)/ωx)**2 -((yy-y0)/ωy)**2 ) # e-field not intensity
-    md = Modedata(λ,'air',[1],1+0*ee,1,0,[ee],0,args) # 'λ,sell,neffs,nn,nsub,dns,ees,mode,kwargs'
+    exs,eys = ([ee],[0*ee]) if pol=='h' else ([0*ee],[ee])
+    md = Modedata(λ,[1],1+0*ee,1+0*ee,1+0*ee,exs,eys,[0*ee],[0*ee],[0*ee],[0*ee],modenum=0,pol=pol,nsub=1,sell='air',wgargs=args)
     return md
 
 if __name__ == '__main__':
