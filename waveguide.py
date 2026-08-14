@@ -118,9 +118,9 @@ class Modedata():
     @property
     def ii(self): return self.nn * self.ee.abs()**2 # I = ½ n c ε₀ E₀², E₀=amplitude
     @property
-    def ex(self): return self.ee.atyindex(self.ee.maxindex()[1])
+    def ex(self): return self.ee.atyindex(self.ee.abs().maxindex()[1])
     @property
-    def ey(self): return self.ee.atxindex(self.ee.maxindex()[0])
+    def ey(self): return self.ee.atxindex(self.ee.abs().maxindex()[0])
     @property
     def mfdx(self): return self.gaussianfit().mfdx
     @property
@@ -915,7 +915,7 @@ class Qpmdata:
     @property
     def Λ(self):
         Λ0 = 1/(self.md3.neff/self.λ3 - self.md2.neff/self.λ2 - self.md1.neff/self.λ1)/1000
-        return Λ0 if not np.iscomplex(Λ0) else np.real(Λ0) # if np.isclose(np.imag(Λ0),0,atol=1e-2) else Λ0
+        return np.real(Λ0) # if np.isclose(np.imag(Λ0),0,atol=1e-2) else Λ0
     # @property
     # def Λbulk(self): return 1/(self.md3.nsub/self.λ3 - self.md2.nsub/self.λ2 - self.md1.nsub/self.λ1)/1000
     @property
@@ -1286,7 +1286,7 @@ class Waveguide():
         # return self.newmodesolve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,verbose=verbose,bothpolmodes=bothpolmodes,**kwargs)
     def ms(self,*args,**kwargs):
         return self.modesolve(*args,**kwargs)
-    def solve(self,solver='octave',method='supress',mode=0,nummodes=None,boundary=None,nsub=None,nguess=None,mretry=None,verbose=True):
+    def solve(self,solver='octave',method='supress',mode=0,nummodes=None,boundary=None,nsub=None,nguess=None,mretry=None,verbose=False):
         # for 'exact', we find all solutions and filter out wrong polarization (of which it may be all but the last few are)
         # for 'isotropic', need to solve for more than 2x modes since generally there will be two versions of each (H and V polarization) and we'll discard half
         # for 'supress', we modify the other axis using modifyeps() to be lower index if desired polarization is lower index than other axis
@@ -1427,10 +1427,10 @@ class Waveguide():
         ϕ = np.trapz([µ(y) for y in ys],x=xs) # integrated phase over the propagation distance
         return ϕ if not effectivelength else ϕ*2/np.pi*Lcs[0]
 
-    def qpm(self,λ1,λ2=None,Type='vvv',dmask=None,method=None,modes=(0,0,0),nummodes=(None,None,None),boundary='0000',**kwargs):
+    def qpm(self,λ1,λ2=None,Type='vvv',dmask=None,solver='octave',method=None,modes=(0,0,0),nummodes=(None,None,None),boundary=None,**kwargs):
         λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
         # mds = [md.modesolve() for md in self(λ=list(λs),pol=list(Type))]
-        mds = [self(λ=λ,pol=p).modesolve(method=method,mode=mode,nummodes=nm,boundary=boundary) for λ,p,mode,nm in zip((λ1,λ2,λ3),Type,modes,nummodes)]
+        mds = [self(λ=λ,pol=p).solve(solver=solver,method=method,mode=mode,nummodes=nm,boundary=boundary) for λ,p,mode,nm in zip((λ1,λ2,λ3),Type,modes,nummodes)]
         if dmask is None and hasattr(self,'dmask'):
             kwargs['dmask'] = self.dmask()
         if dmask is not None:
@@ -1613,7 +1613,7 @@ class Ridgewaveguide(Anisowaveguide):
         self.w,self.h,self.etch,self.bf,self.split = w,h,etch,bf,split
         self.sellbase,self.sellcover = sellbase,sellcover
         bounds = bounds if bounds is not None else 5
-        bounds = bounds if hasattr(bounds,'__len__') else (-(0.5*w+0.5*split+bounds),(0.5*w+0.5*split+bounds),-(h+bounds),bounds)
+        bounds = bounds if hasattr(bounds,'__len__') else (-(int(0.5*w+0.5*split)+bounds),(int(0.5*w+0.5*split)+bounds),-(h+bounds),bounds)
         super().__init__(crystal=crystal,pol=pol,cut=cut,λ=λ,bounds=bounds,step=step)
     def indexfunc(self,λ,axis):
         nridge,nbase,nair = [index(λ,s) for s in (self.crystal+axis,self.sellbase,self.sellcover)]
@@ -1684,6 +1684,36 @@ class Xcuttrapezoidalridgewaveguide(Trapezoidalridgewaveguide):
         super().__init__(w=w,h=h,etch=etch,bf=bf,split=split,crystal=crystal,sellbase=sellbase,sellcover=sellcover,pol=pol,cut=cut,λ=λ,bounds=bounds,step=step,roc=roc,trapezoidangle=trapezoidangle)
     def qpm(self,λ1,λ2=None,Type='hhh',dmask=None,method=None,modes=(0,0,0),nummodes=(None,None,None),boundary='0000',**kwargs):
         return super().qpm(λ1,λ2,Type,dmask,method,modes,nummodes,boundary,**kwargs)
+
+class Trapezoidalcladridgewaveguide(Trapezoidalridgewaveguide):
+    @storecallargs
+    def __init__(self,w=10,h=10,etch=None,bf=1,split=0,crystal='mgln',sellbase='sio2',sellcover='air',sellclad='sio2',clad=0.2,pol='v',cut='zyx',λ=None,bounds=None,step=0.2,roc=0,trapezoidangle=0):
+        self.sellclad,self.clad = sellclad,clad # clad = vertical thickness of conformal layer on and off ridge (e.g. 0.2 = 200nm of SiO₂)
+        super().__init__(w=w,h=h,etch=etch,bf=bf,split=split,crystal=crystal,sellbase=sellbase,sellcover=sellcover,pol=pol,cut=cut,λ=λ,bounds=bounds,step=step,roc=roc,trapezoidangle=trapezoidangle)
+    def indexfunc(self,λ,axis): # clad occupies the region between the core top surface y=Y(x) and the same surface shifted up by c, so its per-pixel area fraction is the difference of two identically antialiased fills and area is conserved on the grid
+        nridge,nbase,nair,nclad = [index(λ,s) for s in (self.crystal+axis,self.sellbase,self.sellcover,self.sellclad)]
+        w,h,etch,bf,s,roc,c = self.w,self.h,self.etch,self.bf,self.split,self.roc,self.clad
+        (x0,x1,y0,y1),(stepx,stepy) = self.bounds,self.step
+        def wvsd(d): # ridge width vs depth (depth = |depth| = -y)
+            return w+2*d*np.tan(self.trapezoidangle)
+        nn = Wave2D(xs=wrange(x0,x1,stepx),ys=wrange(y0,y1,stepy))
+        def trapmask(up): # area fraction inside the trapezoid cross section with its top surface raised vertically by up
+            ww = wvsd(up-nn.yy)
+            if not s:
+                return tophat(nn.xx,-0.5*ww,0.5*ww,nn.dx)
+            return np.maximum(tophat(nn.xx,0.5*(-s-ww),0.5*(-s+ww),nn.dx),tophat(nn.xx,0.5*(+s-ww),0.5*(+s+ww),nn.dx))
+        fcore = nn.yslabs(ys=[-etch,0],ns=[1,trapmask(0),0]) # area fraction below the core top surface Y(x)
+        fclad = np.maximum(nn.yslabs(ys=[c-etch,c],ns=[1,trapmask(c),0])-fcore,0) # below Y(x)+c minus below Y(x), clamp guards reentrant sidewalls
+        n0 = nair + bf*(nridge-nair)*trapmask(0)
+        n1 = nn.yslabs(ys=[-h,-etch,0],ns=[nbase,nridge,n0,nair]) + (nclad-nair)*fclad
+        return n1 * np.exp(0.001*n1.xx/roc) if roc else n1
+class Xcuttrapezoidalcladridgewaveguide(Trapezoidalcladridgewaveguide):
+    @storecallargs
+    def __init__(self,w=10,h=10,etch=None,bf=1,split=0,crystal='mgln',sellbase='sio2',sellcover='air',sellclad='sio2',clad=0.2,pol='h',cut='xzy',λ=None,bounds=None,step=0.2,roc=0,trapezoidangle=0):
+        super().__init__(w=w,h=h,etch=etch,bf=bf,split=split,crystal=crystal,sellbase=sellbase,sellcover=sellcover,sellclad=sellclad,clad=clad,pol=pol,cut=cut,λ=λ,bounds=bounds,step=step,roc=roc,trapezoidangle=trapezoidangle)
+    def qpm(self,λ1,λ2=None,Type='hhh',dmask=None,method=None,modes=(0,0,0),nummodes=(None,None,None),boundary='0000',**kwargs):
+        return super().qpm(λ1,λ2,Type,dmask,method,modes,nummodes,boundary,**kwargs)    
+
 
 class Sinwaveguide(Anisowaveguide):
     @storecallargs
