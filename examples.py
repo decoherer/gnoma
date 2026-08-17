@@ -2,6 +2,7 @@ import numpy as np
 from waveguide import Waveguide,Planewaveguide,Stepfiberwaveguide
 from waveguide import Corningpmfiberwaveguide,Ktpwaveguide,Ridgewaveguide,Rpewaveguide
 from waveguide import Qpmdata,Trapezoidalridgewaveguide,Ktpstripwaveguide,Sinwaveguide
+from waveguide import Rpexcutwaveguide
 from wavedata import Wave,Wave2D,wrange,timeit,track
 from numpy import pi,nan
 W = Wave
@@ -113,13 +114,40 @@ def rpedirectionalcoupler(λ=1550,split=12,width=8,sadepth=1.9,annealtime=23.5,r
         Ls = wrange(0,30,0.1)
         Wave(md.crossover(Ls),Ls).plot(x='coupling length (mm)',y='crossover transmission',grid=1,xlim='f',save=f'ln rpe directional coupler crossover vs coupling length')
         md.plot(x='width (µm)',y='depth (µm)',save=f'mode profile, ln rpe directional coupler mode{md.modenum} at {λ}nm')
-
+def mglnxcutrpewaveguideexample(λ=780,width=4,sadepth=0.6,annealtime=16,reversetime=2.5,annealtemp=300,reversetemp=300,step=0.2,plot=False):
+    # λ = wavelength in nm
+    # width = waveguide litho mask width in µm
+    # sadepth = soft anneal depth in µm
+    # annealtime = hard anneal time in hours
+    # reversetime = reverse exchange time in hours
+    # annealtemp = hard anneal temperature in °C
+    # reversetemp = reverse exchange temperature in °C
+    # step = grid step size in µm
+    wg = Rpexcutwaveguide(w=width,sa=sadepth,a=annealtime,r=reversetime,at=annealtemp,rt=reversetemp,split=0,crystal='mgln',sellcover='air',λ=λ,bounds=None,step=step,diffres=0.1)
+    md = wg.solve(solver='zhu',mode=0,nummodes=99)
+    print(f'{md.neff.real:g} effective index')
+    print(f'{md.mfdx:g}µm mode field diameter width')
+    print(f'{md.mfdy:g}µm mode field diameter height')
+    print(f'{md.modearea():g} µm² mode area')
+    print(f'{md.modecount()} modes, {md.guidedmodecount()} guided modes')
+    print(f'{md.fibercoupling():g} fiber coupling efficiency to PM{md.fiber()} fiber')
+    if plot:
+        s = f'x-cut mgln rpe waveguide mode{md.modenum} at {λ}nm'
+        md.plot(x='width (µm)',y='depth (µm)',save=f'mode profile, {s}')
+        md.indexprofilex().plot(x='x (µm)',y='index',grid=1,xlim='f',save=f'index profile x, {s}')
+        md.indexprofiley().plot(x='y (µm)',y='index',grid=1,xlim='f',save=f'index profile y, {s}')
+        md.angulardistributionx().abs().plot(x='angle (degrees)',y='field',grid=1,xlim='f',save=f'angular distribution x, {s}')
+        md.angulardistributiony().abs().plot(x='angle (degrees)',y='field',grid=1,xlim='f',save=f'angular distribution y, {s}')
+        md.ex.abs().plot(x='x (µm)',y='field',grid=1,xlim='f',save=f'field distribution x, {s}')
+        md.ey.abs().plot(x='y (µm)',y='field',grid=1,xlim='f',save=f'field distribution y, {s}')
+ 
 if __name__ == '__main__':
-    plot = 0
-    step = 0.5
+    plot = 1
+    step = 0.2
     corningpmfiberexample(λ=1064,fiber=980,step=step,plot=plot)
-    ktpwaveguideexample(pol='v',step=step,plot=plot)
-    ktpwaveguideexample(pol='h',step=step,plot=plot)
-    ridgewaveguideexample(step=step,plot=plot)
-    rpewaveguideexample(step=step,plot=plot)
-    rpedirectionalcoupler(step=step,plot=plot)
+    ktpwaveguideexample(λ=1064,pol='v',step=step,plot=plot)
+    ktpwaveguideexample(λ=1064,pol='h',step=step,plot=plot)
+    ridgewaveguideexample(λ=1550,step=step,plot=plot)
+    rpewaveguideexample(λ=1550,step=step,plot=plot)
+    rpedirectionalcoupler(λ=1550,step=step,plot=plot)
+    mglnxcutrpewaveguideexample(λ=780,step=step,plot=plot)
