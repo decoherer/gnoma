@@ -1522,7 +1522,7 @@ class Waveguide():
         save = save or f"phasematching λ1 vs λ2, {','.join(f'{t:g}C' for t in temps)}, {λ1:g}+{λ2:g}"
         if plot or plotargs:
             args = dict(x='$λ_1$ (nm)',y='$λ_2$ (nm)',grid=1,xlim='f',ylim='f',
-                aspect=1 if λ1==λ2 else None,save=save,seed=int(λ1+λ2),legendtext=f'Λ = {Λ0:.3f}µm')
+                aspect=1 if λ1==λ2 else None,save=save,seed=int(λ1+λ2),legendtext=f'{self.w}µm width\nΛ = {Λ0:.3f}µm')
             args.update(plotargs)
             Wave.plots(*us,u0,**args)
             return f'figs/{save}.png'
@@ -1568,7 +1568,7 @@ class Waveguide():
         if plot or plotargs:
             xs = None if xmax is None else np.linspace(0,xmax,int(np.ceil(xmax))+1)
             vs = [] if xs is None else [Wave(u[-2:](xs,extrapolate='log'),xs) for u in us[:1]]
-            args = dict(m='ooo'+' '*len(vs),l='000'+'3'*len(vs),c='123'+'k'*len(vs),
+            args = dict(m='ooo'+' '*len(vs),l='000'+'3'*len(vs),c='123'+'k'*len(vs),legendtext=f'{w}µm width',
                 x='split (µm)',y='Lc (mm)',log=1,grid=1,xlim='f',save=save,seed=int(λ1+λ2))
             args.update(plotargs)
             Wave.plots(*us,*vs,**args)
@@ -1600,8 +1600,8 @@ class Waveguide():
         save = save or f"{λc:.0f} crossover vs {'SHG' if isshg else 'SFG'} wavelength, {qpmtemp:g}C"
         if plot or plotargs:
             xlabel = '$λ_{SHG}$ (nm)' if isshg else f'$λ_{{SFG}}$ (nm), mixed with {λ2:g}nm'
-            args = dict(m=' '*len(us),l='0'*len(us),groupsize=len(us),x=xlabel,y=f'{λc:.0f}nm crossover (%)',grid=1,xlim='f',log=log,
-                legendtext=f'{wdmw:g}µm width, {split:g}µm split',save=save,seed=int(λ1+λ2))
+            args = dict(m=' '*len(us),l='0'*len(us),groupsize=len(us),x=xlabel,y=f'{λc:.0f}nm crossover (%)',grid=1,xlim='f',log=log,seed=int(λ1+λ2),save=save,
+                legendtext=f'{split:g}µm split\n{wdmw:g}µm wdm width\n{qpmwidth:g}µm qpm width\nΛ={qpmperiod:g}µm, {qpmtemp:g}°C')
             args.update(plotargs)
             Wave.plots(*us,**args)
             return f'figs/{save}.png'

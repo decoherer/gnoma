@@ -142,8 +142,8 @@ def mglnxcutrpewaveguideexample(λ=780,width=4,sadepth=0.6,annealtime=16,reverse
         md.ey.abs().plot(x='y (µm)',y='field',grid=1,xlim='f',save=f'field distribution y, {s}')
 def designdocexample():
     wdmargs = dict(wdmw=5,splits=wrange(8,9,0.25),qpmwidth=10,vary='r',vals=wrange(15,30,1),xmax=12,Ls=[0.46,0.66,0.86,1.06,1.26])
-    Rpewaveguide().sfgdesigndoc(1550,810,dw=0.5,qpmtemp=40,wdmargs=wdmargs)
-    # Rpewaveguide(bounds=(-30,30,-40,2)).sfgdesigndoc(1550,810,dw=1,qpmtemp=40,wdmargs=wdmargs)
+    Rpewaveguide(w=9).sfgdesigndoc(1550,810,dw=0.5,qpmtemp=40,wdmargs=wdmargs)
+    # Rpewaveguide(w=9,bounds=(-30,30,-40,2)).sfgdesigndoc(1550,810,dw=1,qpmtemp=40,wdmargs=wdmargs)
 
 if __name__ == '__main__':
     plot = 1
