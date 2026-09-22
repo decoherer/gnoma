@@ -209,6 +209,7 @@ class Modedata():
         g1,g2 = self.args.split,md.args.split
         # y1,y2 = np.log(L1),np.log(L2); m = (y2-y1)/(g2-g1); y0 = y1 - m*g1
         # Lc = Aexp(g/d0) → logLc = g/d0 + logA = m*g + y0 # d0 = 1/m
+        assert L1>0 and L2>0 and L1!=L2
         d0 = (g2-g1)/(np.log(L2)-np.log(L1))
         self.d0 = d0
         return d0 if split is None else L1*np.exp((g-g1)/d0)
@@ -526,7 +527,13 @@ class Modedata():
         kwargs['y'] = kwargs.pop('y','µm')
         kwargs['colormap'] = kwargs.pop('colormap','inferno')
         vmin = kwargs.pop('vmin',self.nsub-0.01)
-        return self.nn.plot(*args,vmin=vmin,contour=self.ee if kwargs.pop('contour',0) else None,**kwargs)
+        # return self.nn.plot(*args,vmin=vmin,contour=self.ee if kwargs.pop('contour',0) else None,**kwargs)
+        if not kwargs.pop('contour',0):
+            return self.nn.plot(*args,vmin=vmin,**kwargs)
+        from plot import plot
+        kwargs['levels'] = kwargs.pop('levels',np.linspace(0,self.ee.abs().max(),11)[1:-1])
+        return plot(image=self.nn,contour=self.ee.abs(),vmin=vmin,**kwargs)
+
     def indexplot(self,*args,**kwargs):
         return self.plotindex(*args,**kwargs)
     def indexprofilex(self):
@@ -1328,7 +1335,8 @@ class Waveguide():
             b = boundary if boundary is not None else 'neumann'
             # stack nx,ny,nz into 3D array, nnn.shape=(nx.shape[0],nx.shape[1],3)
             nnn = np.stack([nx.np,ny.np,nz.np], axis=2)
-            neffs,exs,eys,ezs,hxs,hys,hzs = zhumodesolve(λ/1000,nnn,nx.xs,ny.ys,nummodes,nguess=nguess,method=method,boundary=b)
+            zhumethod = {'v':'tm','h':'te'}[pol]+'isotropic' if method=='isotropic' else method
+            neffs,exs,eys,ezs,hxs,hys,hzs = zhumodesolve(λ/1000,nnn,nx.xs,ny.ys,nummodes,nguess=nguess,method=zhumethod,boundary=b)
         else:
             assert 0
         exs,eys,ezs,hxs,hys,hzs = [[Wave2D(ee,xs=epsx.xs,ys=epsx.ys) for ee in ees] for ees in (exs,eys,ezs,hxs,hys,hzs)]
@@ -1455,24 +1463,199 @@ class Waveguide():
         return self.λ1qpm(Λ,λ1,λ2=None,Δλ=Δλ,λtol=λtol,verbose=verbose,Type=Type,dmask=dmask,method=method,modes=modes,nummodes=nummodes,boundary=boundary,**kwargs)
     def λqpm(self,Λ,λ1,λ2=None,Δλ=100,λtol=1,verbose=False,Type='vvv',dmask=None,method=None,modes=(0,0,0),nummodes=(None,None,None),boundary='0000',**kwargs):
         return self.λ1qpm(Λ,λ1,λ2=λ2,Δλ=Δλ,λtol=λtol,verbose=verbose,Type=Type,dmask=dmask,method=method,modes=modes,nummodes=nummodes,boundary=boundary,**kwargs)
-
+    def Λvswidth(self,λ1,λ2=None,Type='vvv',ws=None,temps=None,plot=False,save=None,qpmargs=None,**plotargs):
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        ws = np.linspace(6,12,7) if ws is None else np.asarray(ws)
+        ts = [None] if temps is None else temps if hasattr(temps,'__len__') else [temps]
+        qpmargs = dict(qpmargs or {})
+        qds = [self(w=w).qpm(λ1,λ2,Type=Type,**qpmargs) for w in track(ws)]
+        us = [Wave([qd.Λ if t is None else qd.Λtemp(t) for qd in qds],ws,'' if t is None else f'{t:g}°C').setplot(c=i) for i,t in enumerate(ts)]
+        u0s = [u.quadminloc(aswave=1).setplot(m='o',l=' ',c=i).rename(f'Λ={u.quadmin():.3f}µm') for i,u in enumerate(us)]
+        save = save if save is not None else f'Λ vs width, {λ1:g}{Type[0].upper()}+{λ2:g}{Type[1].upper()}→{λ3:.0f}{Type[2].upper()}'
+        if plot or plotargs:
+            Wave.plots(*us,*u0s,x='width (µm)',y='Λ (µm)',legendtext=f'noncrit width {us[0].quadminloc():.1f}µm',corner='upper right',save=save,seed=int(λ1+λ2),showseed=1,**plotargs)
+            return f'figs/{save}.png'
+        return us if temps is not None else us[0].setplot(c=None)
+    def ηvswidth(self,λ1,λ2=None,Type='vvv',ws=None,noncrit=True,plot=False,save=None,qpmargs=None,**plotargs):
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        ws,qpmargs = np.linspace(6,12,7) if ws is None else np.asarray(ws),dict(qpmargs or {})
+        qds = [self(w=w).qpm(λ1,λ2,Type=Type,**qpmargs) for w in ws]
+        u = Wave([qd.sfgce() for qd in qds],ws)
+        u0 = u.quadmaxloc(aswave=1).setplot(m='o',l=' ').rename(f'{u.quadmax():.0f}%/W/cm² peak')
+        us = [u,u0]
+        if noncrit:
+            x0 = Wave([qd.Λ for qd in qds],ws).quadminloc()
+            us += [Wave([u(x0)],[x0]).setplot(m='o',l=' ',mf='w').rename(f'{u(x0):.0f}%/W/cm² noncrit')]
+        save = save or f'η vs width, {λ1:g}{Type[0].upper()}+{λ2:g}{Type[1].upper()}→{λ3:.0f}{Type[2].upper()}'
+        if plot or plotargs:
+            args = dict(c='111',x='width (µm)',y='$η_\\mathrm{SFG}$ (%/W/cm²)',corner='lower center',save=save,seed=int(λ1+λ2))
+            args.update(plotargs)
+            Wave.plots(*us,**args)
+            return f'figs/{save}.png'
+        return u
+    def phasematchingcurves(self,λ1,λ2=None,Type='vvv',Λ0=None,temps=None,δλ=None,
+            Δλ1=None,Δλ2=None,exact=False,sell=None,plot=False,save=None,qpmargs=None,**plotargs):
+        from sellmeier import polingperiod
+        from skimage import measure
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        qpmargs,temps = dict(qpmargs or {}),[20,40] if temps is None else list(temps)
+        δλ = 25 if δλ is None and exact else 10 if δλ is None else δλ
+        Δλ1,Δλ2 = 0.1*λ1 if Δλ1 is None else Δλ1,0.1*λ2 if Δλ2 is None else Δλ2
+        qd0 = self.qpm(λ1,λ2,Type=Type,**qpmargs)
+        Λ0,sell = qd0.Λ if Λ0 is None else Λ0,qd0.sell+'wg' if sell is None else sell
+        xs,ys = wrange(λ1-Δλ1/2,λ1+Δλ1/2,δλ,endround=1),wrange(λ2-Δλ2/2,λ2+Δλ2/2,δλ,endround=1)
+        yy,xx = np.meshgrid(ys,xs)
+        def curve(temp):
+            Λt,p0 = qd0.Λtemp(temp),polingperiod(λ1,λ2,sell=sell,Type=qd0.Type,temp=temp)
+            def period(a,b):
+                if exact:
+                    return self.qpm(a,b,Type=Type,**qpmargs).Λtemp(temp)
+                return 1/(1/Λt-1/p0+1/polingperiod(a,b,sell=sell,Type=qd0.Type,temp=temp))
+            cs = measure.find_contours(1/np.vectorize(period)(xx,yy),1/Λ0,fully_connected='low',positive_orientation='low')
+            if not cs:
+                raise ValueError(f'no phasematching contour found at {temp:g}°C')
+            cx = np.concatenate([np.r_[np.interp(c[:,0],np.arange(len(xs)),xs),np.nan] for c in cs])[:-1]
+            cy = np.concatenate([np.r_[np.interp(c[:,1],np.arange(len(ys)),ys),np.nan] for c in cs])[:-1]
+            return Wave(cy,cx,f'{temp:g}°C')
+        us = [curve(temp) for temp in temps]
+        u0 = Wave([λ2],[λ1]).setplot(c='0',m='o',mf='w')
+        save = save or f"phasematching λ1 vs λ2, {','.join(f'{t:g}C' for t in temps)}, {λ1:g}+{λ2:g}"
+        if plot or plotargs:
+            args = dict(x='$λ_1$ (nm)',y='$λ_2$ (nm)',grid=1,xlim='f',ylim='f',
+                aspect=1 if λ1==λ2 else None,save=save,seed=int(λ1+λ2),legendtext=f'Λ = {Λ0:.3f}µm')
+            args.update(plotargs)
+            Wave.plots(*us,u0,**args)
+            return f'figs/{save}.png'
+        return us
+    def mfdsvswidth(self,λ1,λ2=None,Type='vvv',ws=None,plot=False,save=None,qpmargs=None,**plotargs):
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        ws,qpmargs = np.linspace(1,6,11) if ws is None else np.asarray(ws),dict(qpmargs or {})
+        mdss = [self(w=w).qpm(λ1,λ2,Type=Type,**qpmargs).mds() for w in track(ws)]
+        us = [Wave([getattr(mds[n],f'mfd{axis}') for mds in mdss],ws,f'{axis} {(λ1,λ2,λ3)[n]:.0f}nm')
+            .setplot(c=n+1,l='0' if axis=='x' else '1') for n in range(3) for axis in 'xy']
+        save = save or f'MFD vs width, {λ1:g}+{λ2:g}→{λ3:.0f}'
+        if plot or plotargs:
+            args = dict(x='width (µm)',y='MFD (µm)',grid=1,xlim='f',ylim=(0,0.6*abs(self.bounds[2])),corner='upper right',save=save,seed=int(λ1+λ2))
+            args.update(plotargs)
+            Wave.plots(*us,**args)
+            return f'figs/{save}.png'
+        return us
+    def transmissionsvswidth(self,λ1,λ2=None,Type='vvv',ws=None,fibers=None,plot=False,save=None,qpmargs=None,**plotargs):
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        ws,qpmargs = np.linspace(1,6,11) if ws is None else np.asarray(ws),dict(qpmargs or {})
+        mdss = [self(w=w).qpm(λ1,λ2,Type=Type,**qpmargs).mds() for w in ws]
+        fibers = [None]*3 if fibers is None else [fibers]*3 if not hasattr(fibers,'__len__') else list(fibers)
+        fibers = [mdss[0][n].fiber() if fiber is None else fiber for n,fiber in enumerate(fibers)]
+        us = [Wave([100*mds[n].fibercoupling(fiber=fibers[n]) for mds in mdss],ws,
+            f'{λ:.0f}nm, PM{fibers[n]}').setplot(c=n+1) for n,λ in enumerate((λ1,λ2,λ3))]
+        u0s = [u.quadmaxloc(edgemax=True,aswave=1).setplot(m='o',l=' ',c=n+1)
+            .rename(f'{u.quadmax(edgemax=True):.1f}% at {u.quadmaxloc(edgemax=True):.1f}µm') for n,u in enumerate(us)]
+        save = save or f'transmission vs width, {λ1:g}+{λ2:g}→{λ3:.0f}'
+        if plot or plotargs:
+            args = dict(x='width (µm)',y='fiber coupling (%)',xlim='f',ylim=(50,100),corner='lower right',save=save,seed=int(λ1+λ2))
+            args.update(plotargs)
+            Wave.plots(*us,*u0s,**args)
+            return f'figs/{save}.png'
+        return us
+    def Lcvssplit(self,λ1,λ2=None,Type='vvv',w=5,splits=None,xmax=None,plot=False,save=None,**plotargs):
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        assert splits is not None
+        def curve(λ,pol):
+            Ls = [self(λ=λ,pol=pol,w=w,split=s).modesolve(mode=1,nummodes=2).couplinglength(symmetrywarning=False,plot=False) for s in splits]
+            return Wave(Ls,splits,f'{λ:.0f}nm')
+        us = [curve(λ,pol) for λ,pol in ((λ1,Type[0]),(λ2,Type[1]),(λ3,Type[2]))]
+        save = save or f'Lc vs split, {λ1:g}+{λ2:g}→{λ3:.0f}, {w:g}µm width'
+        if plot or plotargs:
+            xs = None if xmax is None else np.linspace(0,xmax,int(np.ceil(xmax))+1)
+            vs = [] if xs is None else [Wave(u[-2:](xs,extrapolate='log'),xs) for u in us[:1]]
+            args = dict(m='ooo'+' '*len(vs),l='000'+'3'*len(vs),c='123'+'k'*len(vs),
+                x='split (µm)',y='Lc (mm)',log=1,grid=1,xlim='f',save=save,seed=int(λ1+λ2))
+            args.update(plotargs)
+            Wave.plots(*us,*vs,**args)
+            return f'figs/{save}.png'
+        return us
+    def wdmcrossovercurves(self,λ1,λ2=None,Type='vvv',λc=None,pol=None,wdmw=None,split=None,Ls=None,qpmwidth=None,qpmperiod=None,qpmtemp=40,
+            vary='r',vals=None,upsample=4,log=False,plot=False,save=None,qpmargs=None,**plotargs):
+        from sellmeier import polingperiod
+        qpmargs = qpmargs or {}
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        assert wdmw is not None and split is not None and vals is not None and Ls is not None
+        assert qpmwidth is not None
+        qd0 = self(w=qpmwidth,split=0).qpm(λ1,λ2,Type=Type,**qpmargs)
+        qpmperiod = float(f'{qd0.Λtemp(qpmtemp):.2f}') if qpmperiod is None else qpmperiod
+        λc = λ1 if λc is None else λc
+        pol = Type[0] if pol is None and abs(λc-λ1)<=abs(λc-λ3) else Type[2] if pol is None else pol
+        vals = np.asarray(vals)
+        wgs = [self(**{vary:v}) for v in vals]
+        def lc(wg,λ,p):
+            return wg(λ=λ,pol=p,w=wdmw,split=split).modesolve(mode=1,nummodes=2).couplinglength(symmetrywarning=False,plot=False)
+        Lcs = Wave([lc(wg,λc,pol) for wg in wgs],vals).upsample(upsample)
+        Λs = Wave([wg(w=qpmwidth,split=0).qpm(λ1,λ2,Type=Type,**qpmargs).Λtemp(qpmtemp) for wg in wgs],vals).upsample(upsample)
+        isshg = np.isclose(λ1,λ2)
+        def pp(λ):
+            return polingperiod(w1=λ,w2=λ if isshg else λ2,temp=qpmtemp,sell=qd0.sell+'wg',Type=qd0.Type)
+        dλdΛ = 20/(pp(λ1+10)-pp(λ1-10))
+        xs = λ1-dλdΛ*(Λs-qpmperiod)
+        us = [Wave(list(100*np.sin(L/Lcs*np.pi/2)**2),list(xs),f'{L:.3f}mm') for L in Ls]
+        save = save or f"{λc:.0f} crossover vs {'SHG' if isshg else 'SFG'} wavelength, {qpmtemp:g}C"
+        if plot or plotargs:
+            xlabel = '$λ_{SHG}$ (nm)' if isshg else f'$λ_{{SFG}}$ (nm), mixed with {λ2:g}nm'
+            args = dict(m=' '*len(us),l='0'*len(us),groupsize=len(us),x=xlabel,y=f'{λc:.0f}nm crossover (%)',grid=1,xlim='f',log=log,
+                legendtext=f'{wdmw:g}µm width, {split:g}µm split',save=save,seed=int(λ1+λ2))
+            args.update(plotargs)
+            Wave.plots(*us,**args)
+            return f'figs/{save}.png'
+        return us
+    def sfgdesigndoc(self,λ1,λ2=None,Type='vvv',dw=0.5,mfw=None,wmax=12,prs=None,show=True,fork=True,qpmtemp=40,qpmargs=None,wdmargs=None,**plotargs):
+        from time import sleep
+        from pypowerpoint import Presentation,addadvrslide
+        λ1,λ2,λ3 = qpmwavelengths(λ1,λ2)
+        qpmargs = qpmargs or {}
+        prs = Presentation() if prs is None else prs
+        mfw = mfw or (7 if max(λ1,λ2)>1999 else 6)
+        s = f'{λ1:g}+{λ2:g}→{λ3:.0f}'
+        args = dict(show=show,fork=fork,title='')|plotargs
+        slides = [
+            (f'{s} poling period vs width',self.Λvswidth(λ1,λ2,Type,ws=wrange(6,wmax,dw),temps=[20,qpmtemp],plot=True,qpmargs=qpmargs,**args),''),
+            (f'{s} conversion efficiency vs width',self.ηvswidth(λ1,λ2,Type,ws=wrange(6,wmax,dw),plot=True,qpmargs=qpmargs,**args),''),
+            (f'{s} phasematching',self.phasematchingcurves(λ1,λ2,Type,temps=[20,qpmtemp],plot=True,qpmargs=qpmargs,**args),''),
+            ('MFD vs width',self.mfdsvswidth(λ1,λ2,Type,ws=wrange(1,mfw,dw),plot=True,qpmargs=qpmargs,**args),''),
+            ('Transmission vs width',self.transmissionsvswidth(λ1,λ2,Type,ws=wrange(1,mfw,dw),plot=True,qpmargs=qpmargs,**args),'')]
+        if wdmargs is not None:
+            splits = np.asarray(wdmargs['splits'])
+            targetsplit = splits[len(splits)//2]
+            md0,md1 = [self(λ=λ1,pol=Type[0],w=wdmargs['wdmw'],split=s).modesolve(mode=1,nummodes=2) for s in [targetsplit,splits[0]]]
+            targetLc = md0.couplinglength(symmetrywarning=False,plot=False)
+            Ls = [targetLc*a for a in [0.6,0.8,1,1.25,1.6]]
+            bendlength = md0.Lr(roc=10,md=md1,symmetrywarning=True) # includes both input and output bends
+            wdmargs = dict(split=targetsplit,xmax=max(12,np.ceil(splits.max()+2)),qpmwidth=None,qpmperiod=None,qpmtemp=qpmtemp,vary='r',Ls=Ls,qpmargs=qpmargs)|wdmargs
+            wdmw,xmax,qpmwidth,qpmperiod,qpmtemp,vary,vals,Ls = wdmargs['wdmw'],wdmargs['xmax'],wdmargs['qpmwidth'],wdmargs['qpmperiod'],wdmargs['qpmtemp'],wdmargs['vary'],wdmargs['vals'],wdmargs['Ls']
+            bendtext =  f" effective length of bends for 10mm ROC: {1e3*bendlength:.0f}µm"
+            bendtext += f"\n {','.join([f'{1e3*L:.0f}' for L in Ls])}µm target crossover lengths"
+            bendtext += f"\n {','.join([f'{1e3*(L-bendlength):.0f}' for L in Ls])}µm straight section lengths for 10mm ROC"
+            print(f"target coupling length for {targetsplit}µm split: {targetLc}mm")
+            print(bendtext)
+            slides += [
+                (f'{s} WDM coupling length vs split',self.Lcvssplit(λ1,λ2,Type,w=wdmw,splits=splits,xmax=xmax,grid=1,xlim='f',plot=True,**args),''),
+                (f'{λ3:.0f}nm crossover vs SFG wavelength',self.wdmcrossovercurves(λ1,λ2,λc=λ3,Type=Type,wdmw=wdmw,split=targetsplit,Ls=Ls,qpmwidth=qpmwidth,qpmperiod=qpmperiod,
+                    qpmtemp=qpmtemp,vary=vary,vals=vals,upsample=4,qpmargs=qpmargs,grid=1,xlim='f',clip=0,log=True,plot=True,**args),''),
+                (f'{λ2:.0f}nm crossover vs SFG wavelength',self.wdmcrossovercurves(λ1,λ2,λc=λ2,Type=Type,wdmw=wdmw,split=targetsplit,Ls=Ls,qpmwidth=qpmwidth,qpmperiod=qpmperiod,
+                    qpmtemp=qpmtemp,vary=vary,vals=vals,upsample=4,qpmargs=qpmargs,grid=1,xlim='f',clip=0,log=True,plot=True,**args),''),
+                (f'{λ1:g}nm crossover vs SFG wavelength',self.wdmcrossovercurves(λ1,λ2,λc=λ1,Type=Type,wdmw=wdmw,split=targetsplit,Ls=Ls,qpmwidth=qpmwidth,qpmperiod=qpmperiod,
+                    qpmtemp=qpmtemp,vary=vary,vals=vals,upsample=4,qpmargs=qpmargs,grid=1,xlim='f',clip=0,ylim=(0,100),log=False,plot=True,**args),bendtext)]
+        if fork:
+            sleep(20)
+        for title,png,text in slides:
+            addadvrslide(prs,title,text,png)
+        prs.save(f"figs/{type(self).__name__} {'sfg and wdm' if wdmargs is not None else 'sfg'} design parameters {s}.pptx")
+        return prs
+        
     # def idstr(self,short=False):
     #     λ1,λ2,w,d,a,r,aa = self.λ1,self.λ2,self.w,self.d,self.a,self.r,self.aa
     #     s = f"{λ1:g}+{λ2:g}" if short else f"{λ1:g}+{λ2:g} {w:g}w {d:g}sa {a:g}a"
     #     s += f" {r:g}r"*bool(r)+f" {aa:g}a2"*bool(aa)
     #     s += f" {self.atemp:g}°a"*bool(320!=self.atemp)+f" {self.rtemp:g}°r"*bool(300!=self.rtemp)
     #     return s
-    def Λvswidth(self,ws=None,temps=None,plot=False,save=None,**plotargs):
-        from wavedata import Wave
-        save = save if save is not None else f"Λ vs width" #, {self.idstr()}"
-        ws = ws if ws is not None else np.linspace(6,12,7)
-        us = [Wave([self(w=w).Λ(temp=temp) for w in ws],ws,f"{temp}°C" if temps is not None else "").setplot(c=i) for i,temp in enumerate(temps if temps is not None else [None])]
-        u0s = [u.quadminloc(aswave=1).setplot(m='o',l=' ',c=i).rename(f"Λ={u.quadmin():.3f}µm") for i,u in enumerate(us)]
-        if plot or plotargs:
-            Wave.plots(*us,*u0s,x='width (µm)',y='Λ (µm)',legendtext=f"noncrit width {us[0].quadminloc():.1f}µm",corner='upper right',save=save,seed=int(self.λ1+self.λ2),showseed=1,**plotargs)
-            return f"figs/{save}.png"
-        return us if temps is not None else us[0].setplot(c=None)
-
     def rotate(self):
         nx = self.nx.transpose(mirrory=True)
         ny = self.ny.transpose(mirrory=True)
