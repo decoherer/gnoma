@@ -29,7 +29,7 @@
 # x mode/targetmode
 # x polarization
 # x allmodes vs allmodes of a given polarization
-# x method (exact, isotropic, supress)
+# x method (exact, isotropic, suppress)
 # - retry at 3x nummodes if mode not found
 # - solver (octavesolve, zhusolve)
 # - boundary
@@ -1029,6 +1029,10 @@ class Qpmdata:
         return 'Λ,Λbulk,overlaparea,λ1,λ2,λ3,deff,ce'.split(',')
 
 @memory.cache
+def zhumodesolve(λ,n,x,y,nmodes,nguess=None,method=None,boundary=None,check=True): # boundary: None,'periodic','dirichlet','neumann','p','d','n'
+    from zhumodes import zhumodesolve as zhu
+    return zhu(λ,n,x,y,nmodes,nguess=nguess,method=method,boundary=boundary,check=check)
+@memory.cache
 def octavesolver(λ,epsx,epsy,epsz,nummodes,dx,dy,boundary,method='exact',nguess=None,verbose=False):
     # https://www.photonics.umd.edu/software/wgmodes/ # A. B. Fallahkhair, K. S. Li and T. E. Murphy, "Vector Finite Difference Modesolver for Anisotropic Dielectric Waveguides", J. Lightwave Technol. 26(11), 1423-1431, (2008).
     # boundary: 4 letter string specifying boundary conditions to be applied at the edges of the computation window. [North,South,East,West] 'A' - Hx is antisymmetric, Hy is symmetric. 'S' - Hx is symmetric and, Hy is antisymmetric. '0' - Hx and Hy are zero immediately outside of the boundary.
@@ -1036,7 +1040,7 @@ def octavesolver(λ,epsx,epsy,epsz,nummodes,dx,dy,boundary,method='exact',nguess
     os.environ["OCTAVE_EXECUTABLE"] = r"C:\octave\Octave-4.4.1\bin\octave-cli.exe"
     import oct2py
     oct2py.octave.addpath('oct')
-    assert method in ('exact','isotropic','supress')
+    assert method in ('exact','isotropic','suppress')
     if 'isotropic'==method:
         epsguess = np.max(epsx) if nguess is None else nguess**2
         hx,hy,neff = oct2py.octave.wgmodes(λ/1000, epsguess, nummodes, dx, dy, epsx, boundary, nout=3)
@@ -1216,91 +1220,21 @@ class Waveguide():
         return self.nn.dy
     def nsub(self):
         return index(self.λ,self.sell) if self.sell else self.nn.min()
-
-    # def newmodesolve(self,method=None,mode=0,nummodes=None,boundary='0000',verbose=True,allmodes=False,**kwargs):
-    #     if allmodes:
-    #         return self(pol=None).solve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,verbose=verbose,**kwargs)
-    #     return self.solve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,verbose=verbose,**kwargs)
-    # def newmodesolve(self,method=None,mode=0,nummodes=None,boundary='0000',verbose=True,allmodes=False,**kwargs):
-    #     # boundary NSEW, 'A' Hx/Hy antisymmetric/symmetric, 'S' Hx/Hy antisymmetric/symmetric, '0' Hx/Hy zero
-    #     assert self.λ is not None
-    #     assert self.pol in 'vh'
-    #     boundary = boundary if boundary not in (None,'neumann') else 'SSSS' if 'v'==self.pol else 'AAAA' # todo: implement 'dirichlet' boundary conditions
-    #     isotropic,exact = ('isotropic'==method),('exact'==method)
-    #     neffs,ees,Ss = newoctavewgmodes(self.λ,self.hindex()**2,self.vindex()**2,self.propindex()**2,nummodes if nummodes is not None else 1+mode,
-    #         self.deltax(),self.deltay(),boundary,isotropic=isotropic,exact=exact,tm=('v'==self.pol),verbose=verbose,targetmode=mode,**kwargs)
-    #     ees = [Wave2D(ee,xs=self.nn.xs,ys=self.nn.ys) for ee in ees]
-    #     # def reshape(hh): return 0.25*( hh[1:,1:] + hh[1:,:-1] + hh[:-1,1:] + hh[:-1,:-1] )
-    #     # hhs = [Wave2D(reshape(hh),xs=self.nn.xs,ys=self.nn.ys) for hh in hhs]
-    #     Ss = [Wave2D(S,xs=self.nn.xs,ys=self.nn.ys) for S in Ss]
-    #     # mds = [Modedata0(self.λ,self.sell,n,self.nn,self.nsub(),ee,mode,self.pol,{}) for n,ee in zip(neffs,ees)]
-    #     mds = [Modedata0(self.λ,self.sell,n,self.nn,self.nsub(),ee,S,mode,self.pol,{}) for n,ee,S in zip(neffs,ees,Ss)]
-    #     # mds[mode].plot(); exit()
-    #     return mds if allmodes else mds[mode]
-    # def oldmodesolve(self,method=None,mode=0,nummodes=None,boundary='0000',verbose=True,allmodes=False,**kwargs):
-    #     assert self.λ is not None
-    #     assert self.pol in 'vh'
-    #     # boundary = boundary if boundary is not None else ('00AA' if (sell.endswith('y') or xcut) else '00SS') if planar else '0000' # 'NSEW' = 'UDRL'
-    #     isotropic,exact = ('isotropic'==method),('exact'==method)
-    #     from modes import octavewgmodes
-    #     from modes import Modedata0 as Oldmodedata
-    #     if 0 and 'zhu'==method or 'zhuanisotropic'==method:
-    #         import zhumodes
-    #         εs = np.stack([ε.epsxx.np.T,ε.epsyy.np.T,ε.epszz.np.T], axis=2)
-    #         tm = (not sell.endswith('y') and not d.xcut)
-    #         neffs,eexs,eeys = zhumodes.zhumodesolve(lam=ε.λ/1000,n=sqrt(εs),x=ε.nn.xs,y=ε.nn.ys,nmodes=2*d.nummodes,
-    #             method=None if 'zhuanisotropic'==d.method else 'tmisotropic' if tm else 'teisotropic')
-    #         filtermodes = zhumodes.filtermodes(neffs,eexs,eeys,polarization='tm' if tm else 'te')
-    #         neffs,ees = filtermodes
-    #         def isreal(ee,tol=1e-9):
-    #             return np.all(abs(ee.imag)<tol)
-    #         if all([isreal(ee) for ee in ees]):
-    #             ees = [-ee.real for ee in ees]
-    #     neffs,ees = octavewgmodes(self.λ,self.hindex()**2,self.vindex()**2,self.propindex()**2,nummodes if nummodes is not None else 1+mode,
-    #         self.deltax(),self.deltay(),boundary,isotropic=isotropic,exact=exact,tm=('v'==self.pol),verbose=verbose,targetmode=mode,**kwargs)
-    #     ees = [Wave2D(ee,xs=self.nn.xs,ys=self.nn.ys) for ee in ees]
-    #     # md = Modedata0(self.λ,self.sell,neffs,self.nn,self.nsub(),ees,mode,{})
-    #     # md.pol = self.pol
-    #     # mds = [Modedata0(self.λ,self.sell,n,self.nn,self.nsub(),ee,mode,self.pol,{}) for n,ee in zip(neffs,ees)]
-    #     mds = [Oldmodedata(self.λ,self.sell,n,self.nn,self.nsub(),self.nn.max()-self.nsub(),[ee],mode,{}) for n,ee in zip(neffs,ees)]
-    #     return mds if allmodes else mds[mode]
-    #     # return mds[mode]
-    #     if hasattr(self,'cca'):
-    #         assert 0
-    #         md.cca,md.ccr  = self.cca,self.ccr
-    #     return md
-    def zhusolve(self,method=None,mode=0,nummodes=None):
-        # import zhumodes
-        # εs = np.stack([ε.epsxx.np.T,ε.epsyy.np.T,ε.epszz.np.T], axis=2)
-        # tm = (not sell.endswith('y') and not d.xcut)
-        # neffs,eexs,eeys = zhumodes.zhumodesolve(lam=ε.λ/1000,n=sqrt(εs),x=ε.nn.xs,y=ε.nn.ys,nmodes=2*d.nummodes,
-        #     method=None if 'zhuanisotropic'==d.method else 'tmisotropic' if tm else 'teisotropic')
-        # filtermodes = zhumodes.filtermodes(neffs,eexs,eeys,polarization='tm' if tm else 'te')
-        # neffs,ees = filtermodes
-        # def isreal(ee,tol=1e-9):
-        #     return np.all(abs(ee.imag)<tol)
-        # if all([isreal(ee) for ee in ees]):
-        #     ees = [-ee.real for ee in ees]
-        import zhumodes
-        # εs = np.stack([(self.hindex()**2).np.T,(self.vindex()**2).np.T,(self.propindex()**2).np.T], axis=2)
-        ns = np.stack([self.hindex().np.T,self.vindex().np.T,self.propindex().np.T], axis=2)
-        tm = ('v'==self.pol)
-        neffs,eexs,eeys = zhumodes.zhumodesolve(lam=self.λ/1000,n=ns,x=self.nn.xs,y=self.nn.ys,nmodes=nummodes if nummodes is not None else 1+mode,method=method)
+    def zhusolve(self,method=None,mode=0,nummodes=None,boundary=None):
+        return self.solve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,solver='zhu')
     def modesolve(self,method=None,mode=0,nummodes=None,boundary='0000',verbose=False,bothpolmodes=False,**kwargs):
         if bothpolmodes:
             return self(pol=None).solve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,verbose=verbose,**kwargs)
         return self.solve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,verbose=verbose,**kwargs)
         # return self.newmodesolve(method=method,mode=mode,nummodes=nummodes,boundary=boundary,verbose=verbose,bothpolmodes=bothpolmodes,**kwargs)
-    def ms(self,*args,**kwargs):
-        return self.modesolve(*args,**kwargs)
-    def solve(self,solver='octave',method='supress',mode=0,nummodes=None,boundary=None,nsub=None,nguess=None,mretry=None,verbose=False):
+    def solve(self,solver='octave',method='suppress',mode=0,nummodes=None,boundary=None,nsub=None,nguess=None,mretry=None,verbose=False):
         # for 'exact', we find all solutions and filter out wrong polarization (of which it may be all but the last few are)
         # for 'isotropic', need to solve for more than 2x modes since generally there will be two versions of each (H and V polarization) and we'll discard half
-        # for 'supress', we modify the other axis using modifyeps() to be lower index if desired polarization is lower index than other axis
+        # for 'suppress', we modify the other axis using modifyeps() to be lower index if desired polarization is lower index than other axis
         λ,pol = self.λ,self.pol
         assert λ is not None and pol in ('h','v',None)
-        method = method if method is not None else 'supress'
-        assert method in ('exact','isotropic','supress')
+        method = method if method is not None else 'suppress'
+        assert method in ('exact','isotropic','suppress')
         assert pol is not None or method in ('exact','isotropic') # if pol is None, return all modes unfiltered
         nummodes = nummodes if nummodes is not None else 1+mode
         mretry = mretry if mretry is not None else 3 if method in ('exact','isotropic') else 0 # retry multiplier, zero for no retry
@@ -1311,7 +1245,7 @@ class Waveguide():
         epsx,epsy,epsz = nx**2,ny**2,nz**2
         dx,dy = self.deltax(),self.deltay()
         # print('mode',mode,'nummodes',nummodes)
-        if 'supress'==method:
+        if 'suppress'==method:
             def modifyeps(epsx,epsy,dn=0.1):
                 # modesolver can't find the solution when desired polarization is lower index than other axis, so modify the other axis to be lower index. this is not done for 'exact' or 'isotropic'
                 # dn=0.1 means index of axis opposite to the desired polarization will be set 0.1 lower
@@ -1331,7 +1265,6 @@ class Waveguide():
                 return 0.25*( hh[1:,1:] + hh[1:,:-1] + hh[:-1,1:] + hh[:-1,:-1] )
             hxs,hys,hzs = ([reinterpolate(hh) for hh in hhs] for hhs in (hxs,hys,hzs))
         elif 'zhu'==solver:
-            from zhumodes import zhumodesolve
             b = boundary if boundary is not None else 'neumann'
             # stack nx,ny,nz into 3D array, nnn.shape=(nx.shape[0],nx.shape[1],3)
             nnn = np.stack([nx.np,ny.np,nz.np], axis=2)
@@ -2000,7 +1933,7 @@ class Ktpwaveguide(Anisowaveguide):
         nn0 = nn.yslabs(ys=[0],ns=[nbulk,nair])
         nn1 = nn.yslabs(ys=[0],ns=[nbulk+nstep*ktpconcentration(-nn.yy,d,c,p,r),nair])
         return nn.xslabs(xs=[-0.5*w,0.5*w],ns=[nn0,nn1,nn0],debug=0)
-    def nonpoled(self,Λ=1e9,λ1=1250,Δλ=50,λtol=1,verbose=False,**kwargs):
+    def nonpoled(self,Λ=1e9,λ1=1250,Δλ=100,λtol=1,verbose=False,**kwargs):
         return self.λqpm(Λ=Λ,λ1=λ1,λ2=None,Δλ=Δλ,λtol=λtol,verbose=verbose,Type='yzy',**kwargs)
 class Ktpwaveguidesplit(Anisowaveguide):
     @storecallargs
@@ -2608,7 +2541,7 @@ if __name__ == '__main__':
             md = wg.modesolve(method='exact',nummodes=2,verbose=0); print(f"neff={md.neff:g}, Δn={md.dneff:g}")
             md = wg.solve(method='exact',nummodes=2,verbose=0); print(f"neff={md.neff:g}, Δn={md.dneff:g}")
             md = Ktpwaveguide(λ=1064,pol='h',step=0.5).modesolve(method=None,verbose=0); print(f"\nneff={md.neff:g}, Δn={md.dneff:g}")
-            md = Ktpwaveguide(λ=1064,pol='h',step=0.5).solve(method='supress',verbose=0); print(f"neff={md.neff:g}, Δn={md.dneff:g}")
+            md = Ktpwaveguide(λ=1064,pol='h',step=0.5).solve(method='suppress',verbose=0); print(f"neff={md.neff:g}, Δn={md.dneff:g}")
             md = Ktpwaveguide(λ=1064,pol='v',step=0.5).modesolve(method='exact',verbose=0); print(f"\nneff={md.neff:g}, Δn={md.dneff:g}")
             md = Ktpwaveguide(λ=1064,pol='v',step=0.5).solve(method='exact',verbose=0); print(f"neff={md.neff:g}, Δn={md.dneff:g}")
             md = Ktpwaveguide(λ=532,w=4,d=2,pol='v',step=0.5).modesolve(method='isotropic',nummodes=2,mode=0,verbose=0); print(f"\nneff={md.neff:g}, Δn={md.dneff:g}")#; print(f"dneffs",md.dneffs)

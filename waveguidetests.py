@@ -401,7 +401,7 @@ if __name__ == '__main__':
         ktpbendlossvsroccompare() #394s
         ridgewgtest()
         # ktpstripwgtest() # h,v Δn swapped?
-    zhutest()
+    # zhutest()
     zhuinfo(1)
 
     # from modes import newmodesolver,modesolver

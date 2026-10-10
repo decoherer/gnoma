@@ -8,42 +8,38 @@ plt.rcParams['keymap.quit'] = ['ctrl+w','cmd+w','q','escape']
 
 def matrixform(k0,n,dx,dy,bcx=None,bcy=None,bcvisualize=False):
     import scipy.sparse as sps
-    # boundary conditions are periodic by default
-    # boundary conditions are specified for Ey field, which are opposite for Ex for dirichlet and neumann
-    # p=periodic, a,d=antisymmetric/dirichlet, s,n=symmetric/neumann
-    bcx,bcy = bcx.lower() if bcx is not None else 'p',bcy.lower() if bcy is not None else 'p'
+    # Arrays have shape (number of x points, number of y points, 3).
+    # Flattening uses C order: y varies fastest, so x-neighbors are nj apart.
+    # Boundary labels refer to Ey; Ex has complementary symmetry.
     ni,nj,_ = np.shape(n)
-    ux = ( -np.eye(nj,k=0) + np.eye(nj,k=1) )
-    if bcy in ['p','periodic']:
-        ux[nj-1,0] = 1
-    elif bcy in ['a','d','dirichlet']: # for Ey
-        ux[0,0] = 0 # Ex S, Ey A
-    elif bcy in ['s','n','neumann']: # for Ey
-        ux[-1,-1] = 0 # Ex A, Ey S
-    else:
-        raise ValueError(f'unknown boundary condition bcy {bcy}')
-    uxblocks = [ux for i in range(ni)]
-    Ux = sps.block_diag(uxblocks,format='csr') # print('Ux.getnnz()',Ux.getnnz()) # number of stored values, including explicit zeros
-    if bcx in ['p','periodic']:
-        Uy = -sps.eye(nj*ni,k=0) + sps.eye(nj*ni,k=nj) + sps.eye(nj*ni,k=-nj*(ni-1))
-    elif bcx in ['a','d','dirichlet']: # for Ey
-        Uy = -sps.diags(np.where(np.arange(nj*ni)<nj*(ni-1),+1,0),format='csr') + sps.eye(nj*ni,k=nj,format='csr')
-    elif bcx in ['s','n','neumann']: # for Ey
-        Uy = -sps.diags(np.where(np.arange(nj*ni)<nj,0,+1),format='csr') + sps.eye(nj*ni,k=nj,format='csr')
-    else:
-        raise ValueError(f'unknown boundary condition bcx {bcx}')
-    Ux,Uy = Ux/dx,Uy/dy
+
+    def forward_difference(size,boundary,axis):
+        b = 'p' if boundary is None else boundary.lower()
+        aliases = {'p':'p','periodic':'p',
+                   'a':'d','d':'d','dirichlet':'d',
+                   's':'n','n':'n','neumann':'n'}
+        if b not in aliases:
+            raise ValueError(f'unknown boundary condition bc{axis} {boundary}')
+        b = aliases[b]
+        # Construct sparse differences directly, without storing dense zeros.
+        D = sps.diags([-np.ones(size),np.ones(size-1)],[0,1],
+                      shape=(size,size),format='lil')
+        if b == 'p':
+            D[-1,0] += 1
+        elif (axis == 'x' and b == 'd') or (axis == 'y' and b == 'n'):
+            D[0,0] = 0
+        else:
+            D[-1,-1] = 0
+        D = D.tocsr()
+        D.eliminate_zeros()
+        return D
+
+    Dx = forward_difference(ni,bcx,'x')
+    Dy = forward_difference(nj,bcy,'y')
+    Ux = sps.kron(Dx,sps.eye(nj,format='csr'),format='csr') / dx
+    Uy = sps.kron(sps.eye(ni,format='csr'),Dy,format='csr') / dy
     Vx,Vy = -Ux.transpose(),-Uy.transpose()
     I =  sps.eye(nj*ni)
-    # if bcvisualize:
-    #     from wavedata import Wave2D
-    #     Ux,Uy = Ux*dx,Uy*dy
-    #     xs,ys,dd = dx*np.arange(nj),dy*np.arange(ni),dict(colormesh=1,aspect=1)
-    #     nn = (n[:,:,0].flatten()).reshape(*n.shape[0:2],)
-    #     Wave2D(nn,xs,ys).plot(legendtext='index',**dd)
-    #     Wave2D(((Ux+Uy) * n[:,:,0].flatten()).reshape(*n.shape[0:2],) ,xs,ys).plot(legendtext='Ux+Uy',**dd)
-    #     Wave2D((n[:,:,0].flatten() * (Vx+Vy)).reshape(*n.shape[0:2],) ,xs,ys).plot(legendtext='Vx+Vy',**dd)
-    #     Ux,Uy = Ux/dx,Uy/dy
     εx = (n[:,:,0]**2).flatten()
     εy = (n[:,:,1]**2).flatten()
     εzinv = (n[:,:,2]**(-2)).flatten()
@@ -57,7 +53,7 @@ def matrixform(k0,n,dx,dy,bcx=None,bcy=None,bcvisualize=False):
     P = sps.vstack([ sps.hstack([Pxx,Pxy]), sps.hstack([Pyx,Pyy]) ]) 
     return P, εx, εy, εzinv, Ux, Uy, Vx, Vy
 def methodindex(n,method=None):
-    if method in ('exact','supress',None): return n.copy()
+    if method in ('exact','suppress',None): return n.copy()
     assert method in ['teisotropic','tmisotropic'], f"unknown method {method}"
     nn = n.copy()
     nn[:,:,:] = n[:,:,0:1] if 'teisotropic'==method else n[:,:,1:2]
@@ -79,6 +75,10 @@ def zhumodesolve(λ,n,x,y,nmodes,nguess=None,method=None,boundary=None,check=Tru
     betaguess = 2*np.pi*nguess/λ
     betasqr,E = eigs(P,k=nmodes,sigma=betaguess**2,maxiter=None)
     β = betasqr**0.5
+    # Number returned candidates by decreasing real effective index.
+    # This does not guarantee that a search near nguess found every higher mode.
+    order = np.argsort(-(β/k).real,kind='stable')
+    β,E = β[order],E[:,order]
     Ex,Ey = np.split(E, 2)
     Hz = (-Uy*Ex + Ux*Ey)/(1j*k)
     Hy = (-1j*k*εx*Ex - Vy*Hz)/(-1j*β)
