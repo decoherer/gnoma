@@ -374,3 +374,75 @@ For crystal-based models, `cut` specifies crystal directions in **vertical, hori
 For nonlinear calculations, select the participating mode at each wavelength before combining the results. `Qpmdata` holds three such mode-data objects; for SHG, the first two represent the same fundamental mode and the third represents the second harmonic. Its `.Λ` property evaluates the signed first-order period from their propagation constants. A period calculation alone does not establish high efficiency: inspect overlap, polarization, the nonlinear coefficient, and convergence as well.
 
 The basic habit remains the same throughout: **define the structure, inspect its index profile, solve for candidate modes, identify the intended mode, and only then interpret derived device quantities.**
+
+## Optional joblib caching
+
+Gnoma can use joblib to store selected calculation results on disk and reuse
+them on subsequent calls with the same inputs, including across Python sessions.
+
+**Joblib caching is disabled by default.** To enable it, set the environment
+variable `GNOMACACHE` to a writable cache directory (`DIR` means directory).
+Leaving the variable unset or empty disables this cache. No changes to the
+source code or `@memory.cache` decorators are required.
+
+### Enable caching on your computer
+
+**Windows — persistent setting**
+
+Run this once in Command Prompt or PowerShell, replacing the example path
+with your preferred cache directory:
+
+```powershell
+setx GNOMACACHE "C:\cache\gnoma"
+```
+
+The setting applies to newly started processes. Fully close and reopen your
+terminal, Visual Studio Code, and any Python sessions before using it.
+
+**Linux or macOS**
+
+Set the variable in the terminal from which you run Python:
+
+```bash
+export GNOMACACHE="$HOME/.cache/gnoma"
+```
+
+To retain this setting in future terminal sessions, add the command to the
+startup file for your shell, such as `~/.bashrc` or `~/.zshrc`.
+
+Use a cache directory outside the repository so that cached results are not
+accidentally committed to Git.
+
+### Configure caching for an individual script
+
+You can enable caching within a script instead of configuring your computer:
+
+```python
+import os
+os.environ["GNOMACACHE"] = r"C:\cache\gnoma"
+
+from waveguide import Waveguide
+```
+
+To disable caching for a run, even when it is enabled in your account settings:
+
+```python
+import os
+os.environ["GNOMACACHE"] = ""
+
+from waveguide import Waveguide
+```
+
+**Set the variable before importing `waveguide`, including through another
+module.** The cache configuration is selected when `waveguide` is first
+imported. Changing the variable afterward does not reconfigure functions
+that have already been decorated; restart Python to change the configuration.
+
+These script-level overrides affect only the current process and its child
+processes, not your permanent account settings. Disabling caching bypasses
+existing joblib results without deleting them.
+
+### Scope
+
+`GNOMACACHE` controls only joblib caching. The separate diffusion cache
+implemented with `diskcache` is not controlled by this setting.
