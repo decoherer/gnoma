@@ -381,7 +381,7 @@ Gnoma can use joblib to store selected calculation results on disk and reuse
 them on subsequent calls with the same inputs, including across Python sessions.
 
 **Joblib caching is disabled by default.** To enable it, set the environment
-variable `GNOMACACHE` to a writable cache directory (`DIR` means directory).
+variable `GNOMACACHE` to a writable cache directory.
 Leaving the variable unset or empty disables this cache. No changes to the
 source code or `@memory.cache` decorators are required.
 
@@ -410,9 +410,6 @@ export GNOMACACHE="$HOME/.cache/gnoma"
 To retain this setting in future terminal sessions, add the command to the
 startup file for your shell, such as `~/.bashrc` or `~/.zshrc`.
 
-Use a cache directory outside the repository so that cached results are not
-accidentally committed to Git.
-
 ### Configure caching for an individual script
 
 You can enable caching within a script instead of configuring your computer:
@@ -432,15 +429,6 @@ os.environ["GNOMACACHE"] = ""
 
 from waveguide import Waveguide
 ```
-
-**Set the variable before importing `waveguide`, including through another
-module.** The cache configuration is selected when `waveguide` is first
-imported. Changing the variable afterward does not reconfigure functions
-that have already been decorated; restart Python to change the configuration.
-
-These script-level overrides affect only the current process and its child
-processes, not your permanent account settings. Disabling caching bypasses
-existing joblib results without deleting them.
 
 ### Scope
 
