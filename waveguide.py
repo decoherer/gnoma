@@ -38,11 +38,11 @@ import numpy as np
 from numpy import pi,inf,sqrt,nan,sin,cos
 from wavedata import Wave2D,Wave,wrange,tophat,inversestepfunction,storecallargs,maplistargs,lerp,track
 from sellmeier import index,qpmwavelengths
-import scipy,collections,joblib
+import scipy,collections,joblib,os
 from scipy.special import erf
 # from modes import fibermode,Beamdata,pmfiber,gaussmode
-memory = joblib.Memory('c:/work/modes/wgcache/',verbose=0)
-
+# memory = joblib.Memory('c:/work/modes/wgcache/',verbose=0)
+memory = joblib.Memory(location=os.environ.get("GNOMACACHE") or None,verbose=0) # caching disabled unless explicitly configured via e.g. c:\setx GNOMACACHE "c:\cache"
 
 class Modedata():
     def __init__(self,λ,neffs,nx,ny,nz,Exs,Eys,Ezs,Hxs,Hys,Hzs,modenum=None,pol=None,nsub=None,sell=None,wgargs={}):
